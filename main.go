@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"html/template"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,7 +21,6 @@ import (
 )
 
 // TODO: translate to multiple languages
-// TODO: try to redo using text/html tmplates
 
 var (
 	dictionary    *yandex_dictionary.YandexDictionary
@@ -27,33 +29,30 @@ var (
 	fileFormatter entryFormatter
 	srcFile       *os.File
 	dstFile       *os.File
-	cache         []*entry
+	cache         []*Entry
 )
 
-type entry struct {
-	req          string
-	translations []string
+type Entry struct {
+	Req          string
+	Translations []string
 }
 
-type ByReq []*entry
+type ByReq []*Entry
 
 func (br ByReq) Len() int           { return len(br) }
 func (br ByReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
-func (br ByReq) Less(i, j int) bool { return br[i].req < br[j].req }
+func (br ByReq) Less(i, j int) bool { return br[i].Req < br[j].Req }
 
 type entryFormatter interface {
-	formatRequest(req string) string
-	formatTranslations(translations ...string) string
-	formatHeader(req string) string
-	delimiter() string
+	template() string
 }
 
 var opts struct {
 	FromLang    string `short:"f" env:"LU_DEFAULT_FROM_LANG" required:"true" description:"default language to translate from"`
 	ToLang      string `short:"t" env:"LU_DEFAULT_TO_LANG" required:"true" description:"default language to translate to"`
-	SrcFileName string `short:"s" description:"source file name"`
-	DstFileName string `short:"d" description:"destination file name"`
-	Sort        bool   `short:"a" description:"sort alphabetically"`
+	SrcFileName string `short:"i" description:"source file name"`
+	DstFileName string `short:"o" description:"destination file name"`
+	Sort        bool   `short:"s" description:"sort alphabetically"`
 }
 
 func setup() error {
@@ -136,8 +135,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	stdinFormatter := &textFormatter{}
-	delimiter := stdinFormatter.delimiter()
+	delimiter := strings.Repeat("*", 80) + "\n"
 	for scanner.Scan() {
 		req := strings.TrimSpace(scanner.Text())
 		if req != "" {
@@ -146,12 +144,14 @@ func main() {
 			// or if there is no source file, because in this case source was stdin
 			// and we want to see output in the terminal too, even if the destination file is specified
 			if srcFile == nil || dstFile == nil {
-				fmt.Print(stdinFormatter.formatTranslations(translations...))
+				for i, t := range translations {
+					fmt.Printf("%d. %s\n", i+1, t)
+				}
 				fmt.Print(delimiter)
 			}
 
 			if dstFile != nil {
-				cache = append(cache, &entry{req, translations})
+				cache = append(cache, &Entry{req, translations})
 			}
 		}
 	}
@@ -210,61 +210,48 @@ func writeFile() {
 		sort.Sort(ByReq(cache))
 	}
 
-	// print out header at first
-	for _, entry := range cache {
-		fmt.Fprint(dstFile, fileFormatter.formatHeader(entry.req))
+	t := template.Must(template.New("text").Parse(fileFormatter.template()))
+	var b bytes.Buffer
+	err := t.Execute(&b, struct{ Entries []*Entry }{cache})
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	fmt.Fprint(dstFile, fileFormatter.delimiter())
-	fmt.Fprint(dstFile, fileFormatter.delimiter())
-
-	for _, entry := range cache {
-		fmt.Fprint(dstFile, fileFormatter.formatRequest(entry.req))
-		fmt.Fprint(dstFile, fileFormatter.formatTranslations(entry.translations...))
-		fmt.Fprint(dstFile, fileFormatter.delimiter())
-	}
+	fmt.Fprint(dstFile, b.String())
 }
 
 type textFormatter struct{}
 
-func (f *textFormatter) formatRequest(req string) string {
-	return req + ":\n"
-}
-
-func (f *textFormatter) formatTranslations(translations ...string) string {
-	b := &strings.Builder{}
-	for i, tr := range translations {
-		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, tr))
-	}
-	return b.String()
-}
-
-func (f *textFormatter) formatHeader(entry string) string {
-	return entry + "\n"
-}
-
-func (f *textFormatter) delimiter() string {
-	return strings.Repeat("*", 80) + "\n"
+func (f *textFormatter) template() string {
+	return `
+{{- range .Entries -}}
+{{ .Req}}
+{{end -}}
+**********************************************************
+**********************************************************
+{{ range .Entries -}}
+{{ .Req}}:
+{{range .Translations -}}
+{{ .}}
+{{end -}}
+**********************************************************
+{{end}}`
 }
 
 type htmlFormatter struct{}
 
-func (f *htmlFormatter) formatRequest(req string) string {
-	return fmt.Sprintf("<dt>%s</dt>\n", req)
-}
+func (f *htmlFormatter) template() string {
+	return `<ul>{{range .Entries}}
+	<li>{{.Req}}</li>{{end}}
+</ul>
 
-func (f *htmlFormatter) formatTranslations(translations ...string) string {
-	b := strings.Builder{}
-	for _, t := range translations {
-		b.WriteString(fmt.Sprintf("<dd>%s</dd>\n", t))
-	}
-	return b.String()
-}
-
-func (f *htmlFormatter) formatHeader(entry string) string {
-	return fmt.Sprintf("<li>%s</li>\n", entry)
-}
-
-func (f *htmlFormatter) delimiter() string {
-	return "\n"
+<dl>
+	{{- range .Entries }}
+	<dt>{{.Req}}</dt>
+		{{ range .Translations -}}
+			<dd>{{.}}</dd>
+		{{end }}
+	{{- end }}
+</dl>
+`
 }
