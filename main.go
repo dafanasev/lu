@@ -20,39 +20,47 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: translate to multiple languages
+// TODO: use templates to render to terminal
+// TODO: add indexes to text output
+// TODO: show progress if output only to file
+// TODO: html file layout template
 
 var (
-	dictionary    *yandex_dictionary.YandexDictionary
+	dictionary    *yandex_dictionary.Dictionary
 	translator    *yandex_translate.Translator
 	scanner       *bufio.Scanner
 	fileFormatter entryFormatter
 	srcFile       *os.File
 	dstFile       *os.File
-	cache         []*Entry
+	history       []*Entry
 )
 
 type Entry struct {
-	Req          string
+	Request   string
+	Responses []*Response
+}
+
+type Response struct {
+	Lang         string
 	Translations []string
 }
 
-type ByReq []*Entry
+type byReq []*Entry
 
-func (br ByReq) Len() int           { return len(br) }
-func (br ByReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
-func (br ByReq) Less(i, j int) bool { return br[i].Req < br[j].Req }
+func (br byReq) Len() int           { return len(br) }
+func (br byReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
+func (br byReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
 
 type entryFormatter interface {
 	template() string
 }
 
 var opts struct {
-	FromLang    string `short:"f" env:"LU_DEFAULT_FROM_LANG" required:"true" description:"default language to translate from"`
-	ToLang      string `short:"t" env:"LU_DEFAULT_TO_LANG" required:"true" description:"default language to translate to"`
-	SrcFileName string `short:"i" description:"source file name"`
-	DstFileName string `short:"o" description:"destination file name"`
-	Sort        bool   `short:"s" description:"sort alphabetically"`
+	FromLang    string   `short:"f" env:"LU_DEFAULT_FROM_LANG" required:"true" description:"default language to translate from"`
+	ToLangs     []string `short:"t" env:"LU_DEFAULT_TO_LANG" required:"true" description:"default language to translate to"`
+	SrcFileName string   `short:"i" description:"source file name"`
+	DstFileName string   `short:"o" description:"destination file name"`
+	Sort        bool     `short:"s" description:"sort alphabetically"`
 }
 
 func setup() error {
@@ -94,8 +102,8 @@ func setupInput(args []string) error {
 
 	var r io.Reader = os.Stdin
 	if len(args) > 0 {
-		entry := strings.Join(args, " ")
-		r = strings.NewReader(entry)
+		req := strings.Join(args, " ")
+		r = strings.NewReader(req)
 	}
 	if opts.SrcFileName != "" {
 		var err error
@@ -127,31 +135,43 @@ func setupOutput() error {
 }
 
 func main() {
-	go handleExit()
-
 	err := setup()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	delimiter := strings.Repeat("*", 80) + "\n"
+	go handleExitSignal()
+
+	var lineWidth = 80
+
 	for scanner.Scan() {
 		req := strings.TrimSpace(scanner.Text())
 		if req != "" {
-			translations := lookup(req)
-			// print to stdout if here is no destination file - i.e. destination is stdout
-			// or if there is no source file, because in this case source was stdin
-			// and we want to see output in the terminal too, even if the destination file is specified
+			entry := &Entry{Request: req}
+
 			if srcFile == nil || dstFile == nil {
-				for i, t := range translations {
-					fmt.Printf("%d. %s\n", i+1, t)
+				fmt.Println(strings.Repeat("*", lineWidth))
+			}
+			for _, lang := range opts.ToLangs {
+
+				translations := lookup(req, lang)
+				resp := &Response{Lang: lang, Translations: translations}
+				// print to stdout if here is no destination file - i.e. destination is stdout
+				// or if there is no source file, because in this case source was stdin
+				// and we want to see output in the terminal too, even if the destination file is specified
+				if srcFile == nil || dstFile == nil {
+					fmt.Println(lang + ":\n")
+					for i, t := range translations {
+						fmt.Printf("%d. %s\n", i+1, t)
+					}
 				}
-				fmt.Print(delimiter)
+				entry.Responses = append(entry.Responses, resp)
 			}
 
-			if dstFile != nil {
-				cache = append(cache, &Entry{req, translations})
+			history = append(history, entry)
+			if srcFile == nil || dstFile == nil {
+				fmt.Println(strings.Repeat(" ", lineWidth))
 			}
 		}
 	}
@@ -170,7 +190,7 @@ func cleanUp() {
 	}
 }
 
-func handleExit() {
+func handleExitSignal() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
@@ -180,12 +200,9 @@ func handleExit() {
 	os.Exit(0)
 }
 
-func lookup(req string) []string {
-	dictResp, err := dictionary.Lookup(&yandex_dictionary.Params{Lang: opts.FromLang + "-" + opts.ToLang, Text: req})
+func lookup(req string, lang string) []string {
+	dictResp, err := dictionary.Lookup(&yandex_dictionary.Params{Lang: opts.FromLang + "-" + lang, Text: req})
 
-	if err != nil {
-		fmt.Println(err)
-	}
 	if err == nil {
 		var trs []string
 		for _, def := range dictResp.Def {
@@ -196,9 +213,8 @@ func lookup(req string) []string {
 		return trs
 	}
 
-	transResp, err := translator.Translate(opts.ToLang, req)
+	transResp, err := translator.Translate(lang, req)
 	if err != nil {
-		fmt.Println(err)
 		return []string{"no translation"}
 	}
 
@@ -207,12 +223,12 @@ func lookup(req string) []string {
 
 func writeFile() {
 	if opts.Sort {
-		sort.Sort(ByReq(cache))
+		sort.Sort(byReq(history))
 	}
 
-	t := template.Must(template.New("text").Parse(fileFormatter.template()))
+	t := template.Must(template.New("translations").Parse(fileFormatter.template()))
 	var b bytes.Buffer
-	err := t.Execute(&b, struct{ Entries []*Entry }{cache})
+	err := t.Execute(&b, struct{ Entries []*Entry }{history})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -225,32 +241,45 @@ type textFormatter struct{}
 func (f *textFormatter) template() string {
 	return `
 {{- range .Entries -}}
-{{ .Req}}
-{{end -}}
+{{.Request}}
+{{ end }}
 **********************************************************
-**********************************************************
+
 {{ range .Entries -}}
-{{ .Req}}:
-{{range .Translations -}}
-{{ .}}
-{{end -}}
+{{.Request}}
 **********************************************************
-{{end}}`
+{{- range .Responses }}
+{{.Lang}}:
+{{ range .Translations -}}
+{{.}}
+{{ end -}}
+----------------------------------------------------------
+{{- end }}
+
+{{ end }}
+`
 }
 
 type htmlFormatter struct{}
 
 func (f *htmlFormatter) template() string {
 	return `<ul>{{range .Entries}}
-	<li>{{.Req}}</li>{{end}}
+	<li>{{.Request}}</li>{{end}}
 </ul>
 
 <dl>
 	{{- range .Entries }}
-	<dt>{{.Req}}</dt>
-		{{ range .Translations -}}
-			<dd>{{.}}</dd>
-		{{end }}
+	<dt>{{.Request}}</dt>
+	{{ range .Responses -}}
+	<dd>
+		<header>{{.Lang}}</header>
+		<ul>
+			{{ range .Translations -}}
+			<li>{{.}}</li>
+			{{ end }}
+		</ul>
+	</dd>
+	{{ end }}
 	{{- end }}
 </dl>
 `
