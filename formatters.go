@@ -75,6 +75,9 @@ func (f *htmlFormatter) listTmpl() string {
 func (f *htmlFormatter) layoutTmpl() string {
 	return `
 <html>
+<head>
+<meta charset="utf-8">
+</head>
 <body>
 	{{ template "list" . }}
 </body>

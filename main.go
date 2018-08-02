@@ -28,6 +28,8 @@ var (
 	history       []*Entry
 )
 
+var version = "0.1.0"
+
 type Entry struct {
 	Request   string
 	Responses []*Response
@@ -44,19 +46,15 @@ func (br byReq) Len() int           { return len(br) }
 func (br byReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
 func (br byReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
 
-var opts struct {
-	FromLang    string   `short:"f" env:"LU_DEFAULT_FROM_LANG" required:"true" description:"default language to translate from"`
-	ToLangs     []string `short:"t" env:"LU_DEFAULT_TO_LANG" required:"true" description:"default language to translate to"`
-	SrcFileName string   `short:"i" description:"source file name"`
-	DstFileName string   `short:"o" description:"destination file name"`
-	Sort        bool     `short:"s" description:"sort alphabetically"`
-	GetLangs    bool     `short:"l" description:"get supported languages"`
-}
-
 func main() {
 	err := setup()
 	if err != nil {
 		exitWithError(err)
+	}
+
+	if opts.Version {
+		fmt.Println(version)
+		os.Exit(0)
 	}
 
 	if opts.GetLangs {
@@ -73,7 +71,7 @@ func main() {
 	go handleExitSignal()
 
 	funcMap := template.FuncMap{"inc": inc}
-	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" }}\n"))
+	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
 
 	n := 0
 	for scanner.Scan() {
