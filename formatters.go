@@ -5,15 +5,19 @@ type entryFormatter interface {
 	listTmpl() string
 }
 
+type layoutFormatter interface {
+	layoutTmpl() string
+}
+
 type textFormatter struct{}
 
 func (f *textFormatter) entryTmpl() string {
 	return `
 {{- define "entry" }}
-{{.Request}}
+{{ .Request }}
 **********************************************************
 {{- range .Responses }}
-{{.Lang}}:
+{{ .Lang }}:
 {{ range $idx, $tr := .Translations -}}
 {{ inc $idx }}. {{ $tr }}
 {{ end -}}
@@ -37,34 +41,54 @@ func (f *textFormatter) listTmpl() string {
 type htmlFormatter struct{}
 
 func (f *htmlFormatter) entryTmpl() string {
-	return `{{- define "entry" }}
-	<dt>{{.Request}}</dt>
-	{{ range .Responses -}}
+	return `{{ define "entry" -}}
+	<dt id={{ inc .idx }}>{{ .entry.Request }}</dt>
+	{{ range .entry.Responses }}
 	<dd>
-		<header>{{.Lang}}</header>
-		<ul>
-			{{ range $idx, $tr := .Translations -}}
-			<li>{{ inc $idx }}. {{ $tr }}</li>
+		<header>{{ .Lang }}</header>
+		<ol>
+			{{ range .Translations -}}
+			<li>{{ . }}</li>
 			{{ end }}
-		</ul>
+		</ol>
 	</dd>
-	{{ end -}}
-	{{ end }}`
+	{{- end }}
+	{{- end }}`
 }
 
 func (f *htmlFormatter) listTmpl() string {
-	return `<ul>{{range .Entries}}
-	<li>{{.Request}}</li>{{end}}
+	return `{{ define "list" }}
+<ul>
+	{{- range $idx, $entry := .Entries }}
+	<li><a href="#{{ inc $idx }}">{{ $entry.Request }}</a></li>
+	{{- end }}
 </ul>
 
 <dl>
-	{{- range .Entries }}
-	{{ template "entry" . }}
-	{{- end }}
+	{{ range $idx, $entry := .Entries }}
+	{{ template "entry" dict "idx" $idx "entry" $entry }}
+	{{ end }}
 </dl>
-`
+{{ end }}`
+}
+
+func (f *htmlFormatter) layoutTmpl() string {
+	return `
+<html>
+<body>
+	{{ template "list" . }}
+</body>
+</html>`
 }
 
 func inc(i int) int {
 	return i + 1
+}
+
+func dict(values ...interface{}) map[string]interface{} {
+	d := make(map[string]interface{}, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		d[values[i].(string)] = values[i+1]
+	}
+	return d
 }

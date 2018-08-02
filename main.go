@@ -16,7 +16,7 @@ import (
 	"github.com/dafanasev/go-yandex-translate"
 )
 
-// TODO: html file layout
+// TODO: improve html layout
 
 var (
 	dictionary    *yandex_dictionary.Dictionary
@@ -62,7 +62,7 @@ func main() {
 	go handleExitSignal()
 
 	funcMap := template.FuncMap{"inc": inc}
-	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
+	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" }}\n"))
 
 	n := 0
 	for scanner.Scan() {
@@ -141,8 +141,13 @@ func writeFile() {
 		sort.Sort(byReq(history))
 	}
 
-	funcMap := template.FuncMap{"inc": inc}
-	t := template.Must(template.New("").Funcs(funcMap).Parse(fileFormatter.entryTmpl() + fileFormatter.listTmpl()))
+	tmpl := fileFormatter.entryTmpl() + fileFormatter.listTmpl()
+	funcMap := template.FuncMap{"inc": inc, "dict": dict}
+	if lf, ok := fileFormatter.(layoutFormatter); ok {
+		tmpl += lf.layoutTmpl()
+	}
+	t := template.Must(template.New("").Funcs(funcMap).Parse(tmpl))
+
 	var b bytes.Buffer
 	err := t.Execute(&b, struct{ Entries []*Entry }{history})
 	if err != nil {
