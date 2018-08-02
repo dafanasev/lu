@@ -5,19 +5,15 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
 
 	"github.com/dafanasev/go-yandex-dictionary"
 	"github.com/dafanasev/go-yandex-translate"
-	"github.com/jessevdk/go-flags"
-	"github.com/pkg/errors"
 )
 
 // TODO: html file layout
@@ -48,88 +44,12 @@ func (br byReq) Len() int           { return len(br) }
 func (br byReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
 func (br byReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
 
-type entryFormatter interface {
-	entryTmpl() string
-	listTmpl() string
-}
-
 var opts struct {
 	FromLang    string   `short:"f" env:"LU_DEFAULT_FROM_LANG" required:"true" description:"default language to translate from"`
 	ToLangs     []string `short:"t" env:"LU_DEFAULT_TO_LANG" required:"true" description:"default language to translate to"`
 	SrcFileName string   `short:"i" description:"source file name"`
 	DstFileName string   `short:"o" description:"destination file name"`
 	Sort        bool     `short:"s" description:"sort alphabetically"`
-}
-
-func setup() error {
-	dictionaryAPIKey := os.Getenv("LU_YANDEX_DICTIONARY_API_KEY")
-	if dictionaryAPIKey == "" {
-		return errors.New("the required environment variable LU_YANDEX_DICTIONARY_API_KEY is not set")
-	}
-
-	translateAPIKey := os.Getenv("LU_YANDEX_TRANSLATE_API_KEY")
-	if translateAPIKey == "" {
-		return errors.New("the required environment variable LU_YANDEX_TRANSLATE_API_KEY is not set")
-	}
-
-	args, err := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash).Parse()
-	if err != nil {
-		return errors.Wrap(err, "can not parse arguments")
-	}
-
-	err = setupInput(args)
-	if err != nil {
-		return err
-	}
-
-	err = setupOutput()
-	if err != nil {
-		return err
-	}
-
-	dictionary = yandex_dictionary.New(dictionaryAPIKey)
-	translator = yandex_translate.New(translateAPIKey)
-
-	return nil
-}
-
-func setupInput(args []string) error {
-	if opts.SrcFileName != "" && opts.SrcFileName == opts.DstFileName {
-		return errors.New("source and destination must be different files")
-	}
-
-	var r io.Reader = os.Stdin
-	if len(args) > 0 {
-		req := strings.Join(args, " ")
-		r = strings.NewReader(req)
-	}
-	if opts.SrcFileName != "" {
-		var err error
-		srcFile, err = os.Open(opts.SrcFileName)
-		if err != nil {
-			return err
-		}
-		r = srcFile
-	}
-	scanner = bufio.NewScanner(r)
-	return nil
-}
-
-func setupOutput() error {
-	if opts.DstFileName != "" {
-		var err error
-		dstFile, err = os.OpenFile(opts.DstFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return err
-		}
-
-		if filepath.Ext(opts.DstFileName) == ".html" {
-			fileFormatter = &htmlFormatter{}
-		} else {
-			fileFormatter = &textFormatter{}
-		}
-	}
-	return nil
 }
 
 func main() {
@@ -230,68 +150,4 @@ func writeFile() {
 	}
 
 	fmt.Fprint(dstFile, b.String())
-}
-
-type textFormatter struct{}
-
-func (f *textFormatter) entryTmpl() string {
-	return `
-{{- define "entry" }}
-{{.Request}}
-**********************************************************
-{{- range .Responses }}
-{{.Lang}}:
-{{ range $idx, $tr := .Translations -}}
-{{ inc $idx }}. {{ $tr }}
-{{ end -}}
-----------------------------------------------------------
-{{- end }}
-{{- end }}`
-}
-
-func (f *textFormatter) listTmpl() string {
-	return `
-{{- range .Entries -}}
-{{.Request}}
-{{ end }}
-**********************************************************
-{{ range .Entries -}}
-{{ template "entry" . }}
-{{ end }}
-`
-}
-
-type htmlFormatter struct{}
-
-func (f *htmlFormatter) entryTmpl() string {
-	return `{{- define "entry" }}
-	<dt>{{.Request}}</dt>
-	{{ range .Responses -}}
-	<dd>
-		<header>{{.Lang}}</header>
-		<ul>
-			{{ range $idx, $tr := .Translations -}}
-			<li>{{ inc $idx }}. {{ $tr }}</li>
-			{{ end }}
-		</ul>
-	</dd>
-	{{ end -}}
-	{{ end }}`
-}
-
-func (f *htmlFormatter) listTmpl() string {
-	return `<ul>{{range .Entries}}
-	<li>{{.Request}}</li>{{end}}
-</ul>
-
-<dl>
-	{{- range .Entries }}
-	{{ template "entry" . }}
-	{{- end }}
-</dl>
-`
-}
-
-func inc(i int) int {
-	return i + 1
 }
