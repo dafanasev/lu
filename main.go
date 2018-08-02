@@ -23,7 +23,7 @@ import (
 // TODO: use templates to render to terminal
 // TODO: add indexes to text output
 // TODO: show progress if output only to file
-// TODO: html file layout template
+// TODO: html file layout translations
 
 var (
 	dictionary    *yandex_dictionary.Dictionary
@@ -52,7 +52,8 @@ func (br byReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
 func (br byReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
 
 type entryFormatter interface {
-	template() string
+	entryTmpl() string
+	listTmpl() string
 }
 
 var opts struct {
@@ -143,36 +144,27 @@ func main() {
 
 	go handleExitSignal()
 
-	var lineWidth = 80
+	t := template.Must(template.New("").Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
 
 	for scanner.Scan() {
 		req := strings.TrimSpace(scanner.Text())
 		if req != "" {
 			entry := &Entry{Request: req}
 
-			if srcFile == nil || dstFile == nil {
-				fmt.Println(strings.Repeat("*", lineWidth))
-			}
 			for _, lang := range opts.ToLangs {
-
 				translations := lookup(req, lang)
 				resp := &Response{Lang: lang, Translations: translations}
-				// print to stdout if here is no destination file - i.e. destination is stdout
-				// or if there is no source file, because in this case source was stdin
-				// and we want to see output in the terminal too, even if the destination file is specified
-				if srcFile == nil || dstFile == nil {
-					fmt.Println(lang + ":\n")
-					for i, t := range translations {
-						fmt.Printf("%d. %s\n", i+1, t)
-					}
-				}
 				entry.Responses = append(entry.Responses, resp)
 			}
 
-			history = append(history, entry)
+			// print to stdout if here is no destination file - i.e. destination is stdout
+			// or if there is no source file, because in this case source was stdin
+			// and we want to see output in the terminal too, even if the destination file is specified
 			if srcFile == nil || dstFile == nil {
-				fmt.Println(strings.Repeat(" ", lineWidth))
+				t.Execute(os.Stdout, entry)
 			}
+
+			history = append(history, entry)
 		}
 	}
 
@@ -214,7 +206,7 @@ func lookup(req string, lang string) []string {
 	}
 
 	transResp, err := translator.Translate(lang, req)
-	if err != nil {
+	if err != nil || transResp.Result() == req {
 		return []string{"no translation"}
 	}
 
@@ -226,7 +218,7 @@ func writeFile() {
 		sort.Sort(byReq(history))
 	}
 
-	t := template.Must(template.New("translations").Parse(fileFormatter.template()))
+	t := template.Must(template.New("").Parse(fileFormatter.entryTmpl() + fileFormatter.listTmpl()))
 	var b bytes.Buffer
 	err := t.Execute(&b, struct{ Entries []*Entry }{history})
 	if err != nil {
@@ -238,14 +230,9 @@ func writeFile() {
 
 type textFormatter struct{}
 
-func (f *textFormatter) template() string {
+func (f *textFormatter) entryTmpl() string {
 	return `
-{{- range .Entries -}}
-{{.Request}}
-{{ end }}
-**********************************************************
-
-{{ range .Entries -}}
+{{- define "entry" }}
 {{.Request}}
 **********************************************************
 {{- range .Responses }}
@@ -255,20 +242,25 @@ func (f *textFormatter) template() string {
 {{ end -}}
 ----------------------------------------------------------
 {{- end }}
+{{- end }}`
+}
 
+func (f *textFormatter) listTmpl() string {
+	return `
+{{- range .Entries -}}
+{{.Request}}
+{{ end }}
+**********************************************************
+{{ range .Entries -}}
+{{ template "entry" . }}
 {{ end }}
 `
 }
 
 type htmlFormatter struct{}
 
-func (f *htmlFormatter) template() string {
-	return `<ul>{{range .Entries}}
-	<li>{{.Request}}</li>{{end}}
-</ul>
-
-<dl>
-	{{- range .Entries }}
+func (f *htmlFormatter) entryTmpl() string {
+	return `{{- define "entry" }}
 	<dt>{{.Request}}</dt>
 	{{ range .Responses -}}
 	<dd>
@@ -279,7 +271,18 @@ func (f *htmlFormatter) template() string {
 			{{ end }}
 		</ul>
 	</dd>
-	{{ end }}
+	{{ end -}}
+	{{ end }}`
+}
+
+func (f *htmlFormatter) listTmpl() string {
+	return `<ul>{{range .Entries}}
+	<li>{{.Request}}</li>{{end}}
+</ul>
+
+<dl>
+	{{- range .Entries }}
+	{{ template "entry" . }}
 	{{- end }}
 </dl>
 `
