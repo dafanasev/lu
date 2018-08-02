@@ -20,10 +20,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TODO: use templates to render to terminal
-// TODO: add indexes to text output
-// TODO: show progress if output only to file
-// TODO: html file layout translations
+// TODO: html file layout
 
 var (
 	dictionary    *yandex_dictionary.Dictionary
@@ -144,11 +141,14 @@ func main() {
 
 	go handleExitSignal()
 
-	t := template.Must(template.New("").Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
+	funcMap := template.FuncMap{"inc": inc}
+	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
 
+	n := 0
 	for scanner.Scan() {
 		req := strings.TrimSpace(scanner.Text())
 		if req != "" {
+			n++
 			entry := &Entry{Request: req}
 
 			for _, lang := range opts.ToLangs {
@@ -162,6 +162,9 @@ func main() {
 			// and we want to see output in the terminal too, even if the destination file is specified
 			if srcFile == nil || dstFile == nil {
 				t.Execute(os.Stdout, entry)
+			} else {
+				// otherwise show progress
+				fmt.Printf("%d. Got results for %s\n", n, req)
 			}
 
 			history = append(history, entry)
@@ -218,7 +221,8 @@ func writeFile() {
 		sort.Sort(byReq(history))
 	}
 
-	t := template.Must(template.New("").Parse(fileFormatter.entryTmpl() + fileFormatter.listTmpl()))
+	funcMap := template.FuncMap{"inc": inc}
+	t := template.Must(template.New("").Funcs(funcMap).Parse(fileFormatter.entryTmpl() + fileFormatter.listTmpl()))
 	var b bytes.Buffer
 	err := t.Execute(&b, struct{ Entries []*Entry }{history})
 	if err != nil {
@@ -237,8 +241,8 @@ func (f *textFormatter) entryTmpl() string {
 **********************************************************
 {{- range .Responses }}
 {{.Lang}}:
-{{ range .Translations -}}
-{{.}}
+{{ range $idx, $tr := .Translations -}}
+{{ inc $idx }}. {{ $tr }}
 {{ end -}}
 ----------------------------------------------------------
 {{- end }}
@@ -266,8 +270,8 @@ func (f *htmlFormatter) entryTmpl() string {
 	<dd>
 		<header>{{.Lang}}</header>
 		<ul>
-			{{ range .Translations -}}
-			<li>{{.}}</li>
+			{{ range $idx, $tr := .Translations -}}
+			<li>{{ inc $idx }}. {{ $tr }}</li>
 			{{ end }}
 		</ul>
 	</dd>
@@ -286,4 +290,8 @@ func (f *htmlFormatter) listTmpl() string {
 	{{- end }}
 </dl>
 `
+}
+
+func inc(i int) int {
+	return i + 1
 }
