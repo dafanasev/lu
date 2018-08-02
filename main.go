@@ -22,7 +22,7 @@ var (
 	dictionary    *yandex_dictionary.Dictionary
 	translator    *yandex_translate.Translator
 	scanner       *bufio.Scanner
-	fileFormatter entryFormatter
+	fileTemplater templater
 	srcFile       *os.File
 	dstFile       *os.File
 	history       []*Entry
@@ -71,7 +71,7 @@ func main() {
 	go handleExitSignal()
 
 	funcMap := template.FuncMap{"inc": inc}
-	t := template.Must(template.New("").Funcs(funcMap).Parse((&textFormatter{}).entryTmpl() + "{{ template \"entry\" . }}\n"))
+	t := template.Must(template.New("").Funcs(funcMap).Parse((&textTemplater{}).entry() + "{{ template \"entry\" . }}\n"))
 
 	n := 0
 	for scanner.Scan() {
@@ -155,11 +155,11 @@ func writeFile() {
 		sort.Sort(byReq(history))
 	}
 
-	tmpl := fileFormatter.entryTmpl() + fileFormatter.listTmpl()
-	funcMap := template.FuncMap{"inc": inc, "dict": dict}
-	if lf, ok := fileFormatter.(layoutFormatter); ok {
-		tmpl += lf.layoutTmpl()
+	tmpl := fileTemplater.entry() + fileTemplater.list()
+	if lf, ok := fileTemplater.(layoutTemplater); ok {
+		tmpl += lf.layout()
 	}
+	funcMap := template.FuncMap{"inc": inc, "dict": dict}
 	t := template.Must(template.New("").Funcs(funcMap).Parse(tmpl))
 
 	var b bytes.Buffer

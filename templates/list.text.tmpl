@@ -1,0 +1,7 @@
+{{ range .Entries -}}
+{{.Request}}
+{{ end }}
+**********************************************************
+{{ range .Entries -}}
+{{ template "entry" . }}
+{{ end }}

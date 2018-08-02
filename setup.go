@@ -92,11 +92,11 @@ func setupOutput() error {
 			return err
 		}
 
-		fileFormatter = func(ext string) entryFormatter {
+		fileTemplater = func(ext string) templater {
 			if ext == "html" {
-				return &htmlFormatter{}
+				return &htmlTemplater{}
 			}
-			return &textFormatter{}
+			return &textTemplater{}
 		}(filepath.Ext(opts.DstFileName)[1:])
 	}
 	return nil

@@ -1,0 +1,13 @@
+{{ define "entry" -}}
+<dt id={{ inc .idx }}>{{ .entry.Request }}</dt>
+{{ range .entry.Responses }}
+<dd>
+    <header>{{ .Lang }}</header>
+    <ol>
+        {{ range .Translations -}}
+        <li>{{ . }}</li>
+        {{ end }}
+    </ol>
+</dd>
+{{- end }}
+{{- end }}

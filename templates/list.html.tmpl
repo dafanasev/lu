@@ -1,0 +1,13 @@
+{{ define "list" }}
+<ul>
+	{{- range $idx, $entry := .Entries }}
+	<li><a href="#{{ inc $idx }}">{{ $entry.Request }}</a></li>
+	{{- end }}
+</ul>
+
+<dl>
+	{{ range $idx, $entry := .Entries }}
+	{{ template "entry" dict "idx" $idx "entry" $entry }}
+	{{ end }}
+</dl>
+{{ end }}
