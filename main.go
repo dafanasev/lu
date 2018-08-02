@@ -50,13 +50,24 @@ var opts struct {
 	SrcFileName string   `short:"i" description:"source file name"`
 	DstFileName string   `short:"o" description:"destination file name"`
 	Sort        bool     `short:"s" description:"sort alphabetically"`
+	GetLangs    bool     `short:"l" description:"get supported languages"`
 }
 
 func main() {
 	err := setup()
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		exitWithError(err)
+	}
+
+	if opts.GetLangs {
+		langs, err := supportedLangs()
+		if err != nil {
+			exitWithError(err)
+		}
+		for _, lang := range langs {
+			fmt.Println(lang)
+		}
+		os.Exit(0)
 	}
 
 	go handleExitSignal()
@@ -92,6 +103,11 @@ func main() {
 	}
 
 	cleanUp()
+}
+
+func exitWithError(err error) {
+	fmt.Println(err)
+	os.Exit(1)
 }
 
 func cleanUp() {
@@ -155,4 +171,18 @@ func writeFile() {
 	}
 
 	fmt.Fprint(dstFile, b.String())
+}
+
+func supportedLangs() ([]string, error) {
+	resp, err := translator.GetLangs("en")
+	if err != nil {
+		return nil, err
+	}
+	var langs []string
+	for abbr, lang := range resp.Langs {
+		langs = append(langs, fmt.Sprintf("%s: %s", abbr, lang))
+	}
+	sort.Strings(langs)
+
+	return langs, nil
 }
