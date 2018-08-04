@@ -1,6 +1,46 @@
 <html>
 <head>
 <meta charset="utf-8">
+<style>
+    body, ol, dl, dd {
+        padding: 0;
+    }
+    body {
+        margin: 0;
+    }
+    ol {
+        margin: 0;
+        margin-left: 30px;
+    }
+    ol#req-list {
+        margin: 20px 50px;
+    }
+    ol#req-list li {
+        color: #9a9a9a;
+    }
+    ol#req-list li a {
+        color: #80494b;
+    }
+    dl {
+        margin-left: 50px;
+    }
+    dd {
+        margin-left: 20px;
+    }
+    dl dt {
+        margin-top: 20px;
+        color: #80494b;
+    }
+    dl dd header {
+        color: #070;
+    }
+    dl dd ol li {
+        color: #9a9a9a;
+    }
+    dl dd ol li span {
+        color: #4b4b99;
+    }
+</style>
 </head>
 <body>
 	{{ template "list" . }}

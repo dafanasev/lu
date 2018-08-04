@@ -1,9 +1,9 @@
 {{ define "list" }}
-<ul>
+<ol id="req-list">
 	{{- range $idx, $entry := .Entries }}
 	<li><a href="#{{ inc $idx }}">{{ $entry.Request }}</a></li>
 	{{- end }}
-</ul>
+</ol>
 
 <dl>
 	{{ range $idx, $entry := .Entries }}
