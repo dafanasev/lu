@@ -5,49 +5,48 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"log"
 	"os"
 	"os/signal"
 	"sort"
-	"strings"
 	"syscall"
-
-	"github.com/dafanasev/go-yandex-dictionary"
-	"github.com/dafanasev/go-yandex-translate"
-)
-
-// TODO: improve html layout
-
-var (
-	dictionary    *yandex_dictionary.Dictionary
-	translator    *yandex_translate.Translator
-	scanner       *bufio.Scanner
-	fileTemplater templater
-	srcFile       *os.File
-	dstFile       *os.File
-	history       []*Entry
 )
 
 var version = "0.1.0"
 
-type Entry struct {
+var (
+	dict          dictionary
+	tr            translator
+	scanner       *bufio.Scanner
+	fileTemplater templater
+	srcFile       *os.File
+	dstFile       *os.File
+	history       []*entry
+)
+
+var stdoutTemplater = func() *template.Template {
+	return template.Must(template.New("").Funcs(templaesFnMap).Parse((&textTemplater{}).entry() + "{{ template \"entry\" . }}\n"))
+}()
+
+// entry holds request and corresponding responses, one for each requested language
+type entry struct {
 	Request   string
-	Responses []*Response
+	Responses []*response
 }
 
-type Response struct {
+// response is the single response
+type response struct {
 	Lang         string
 	Translations []string
 }
 
-type byReq []*Entry
+type entriesByReq []*entry
 
-func (br byReq) Len() int           { return len(br) }
-func (br byReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
-func (br byReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
+func (br entriesByReq) Len() int           { return len(br) }
+func (br entriesByReq) Swap(i, j int)      { br[i], br[j] = br[j], br[i] }
+func (br entriesByReq) Less(i, j int) bool { return br[i].Request < br[j].Request }
 
 func main() {
-	err := setup()
+	args, err := parseOpts()
 	if err != nil {
 		exitWithError(err)
 	}
@@ -57,55 +56,71 @@ func main() {
 		os.Exit(0)
 	}
 
-	if opts.GetLangs {
-		langs, err := supportedLangs()
+	if opts.ShowLangs {
+		err = showLangs()
 		if err != nil {
 			exitWithError(err)
-		}
-		for _, lang := range langs {
-			fmt.Println(lang)
 		}
 		os.Exit(0)
 	}
 
+	err = setup(args)
+	if err != nil {
+		exitWithError(err)
+	}
+
 	go handleExitSignal()
 
-	funcMap := template.FuncMap{"inc": inc}
-	t := template.Must(template.New("").Funcs(funcMap).Parse((&textTemplater{}).entry() + "{{ template \"entry\" . }}\n"))
+	entriesChan := make(chan *entry)
+	go lookupCycle(entriesChan)
 
 	n := 0
-	for scanner.Scan() {
-		req := strings.TrimSpace(scanner.Text())
-		if req != "" {
-			n++
-			entry := &Entry{Request: req}
-
-			for _, lang := range opts.ToLangs {
-				translations := lookup(req, lang)
-				resp := &Response{Lang: lang, Translations: translations}
-				entry.Responses = append(entry.Responses, resp)
-			}
-
-			// print to stdout if here is no destination file - i.e. destination is stdout
-			// or if there is no source file, because in this case source was stdin
-			// and we want to see output in the terminal too, even if the destination file is specified
-			if srcFile == nil || dstFile == nil {
-				t.Execute(os.Stdout, entry)
-			} else {
-				// otherwise show progress
-				fmt.Printf("%d. Got results for %s\n", n, req)
-			}
-
-			history = append(history, entry)
-		}
+	for entry := range entriesChan {
+		n++
+		handleEntry(entry)
+		printResults(entry, n)
 	}
 
 	cleanUp()
 }
 
+func handleEntry(entry *entry) {
+	history = append(history, entry)
+}
+
+func printResults(entry *entry, n int) {
+	if shouldPrintEntry() {
+		err := stdoutTemplater.Execute(os.Stdout, entry)
+		if err != nil {
+			exitWithError(err)
+		}
+	} else {
+		fmt.Printf("%d. Got results for %s\n", n, entry.Request)
+	}
+}
+
+func shouldPrintEntry() bool {
+	// print to stdout if there is no destination file - i.e. destination is stdout
+	// or if there is no source file, because in this case source is stdin
+	// and we want to see output in the terminal too, even if the destination file is specified
+	// otherwise show progress
+	return srcFile == nil || dstFile == nil
+}
+
 func exitWithError(err error) {
 	fmt.Println(err)
 	os.Exit(1)
+}
+
+func showLangs() error {
+	langs, err := supportedLangs("en")
+	if err != nil {
+		return err
+	}
+	for _, lang := range langs {
+		fmt.Println(lang)
+	}
+	return nil
 }
 
 func cleanUp() {
@@ -114,7 +129,10 @@ func cleanUp() {
 	}
 
 	if dstFile != nil {
-		writeFile()
+		err := writeFile()
+		if err != nil {
+			exitWithError(err)
+		}
 		dstFile.Close()
 	}
 }
@@ -129,58 +147,23 @@ func handleExitSignal() {
 	os.Exit(0)
 }
 
-func lookup(req string, lang string) []string {
-	dictResp, err := dictionary.Lookup(&yandex_dictionary.Params{Lang: opts.FromLang + "-" + lang, Text: req})
-
-	if err == nil {
-		var trs []string
-		for _, def := range dictResp.Def {
-			for _, tr := range def.Tr {
-				trs = append(trs, tr.Text)
-			}
-		}
-		return trs
-	}
-
-	transResp, err := translator.Translate(lang, req)
-	if err != nil || transResp.Result() == req {
-		return []string{"no translation"}
-	}
-
-	return []string{transResp.Result()}
-}
-
-func writeFile() {
+func writeFile() error {
 	if opts.Sort {
-		sort.Sort(byReq(history))
+		sort.Sort(entriesByReq(history))
 	}
 
-	tmpl := fileTemplater.entry() + fileTemplater.list()
+	text := fileTemplater.entry() + fileTemplater.list()
 	if lf, ok := fileTemplater.(layoutTemplater); ok {
-		tmpl += lf.layout()
+		text += lf.layout()
 	}
-	funcMap := template.FuncMap{"inc": inc, "dict": dict}
-	t := template.Must(template.New("").Funcs(funcMap).Parse(tmpl))
+	t := template.Must(template.New("").Funcs(templaesFnMap).Parse(text))
 
 	var b bytes.Buffer
-	err := t.Execute(&b, struct{ Entries []*Entry }{history})
+	err := t.Execute(&b, struct{ Entries []*entry }{history})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	fmt.Fprint(dstFile, b.String())
-}
-
-func supportedLangs() ([]string, error) {
-	resp, err := translator.GetLangs("en")
-	if err != nil {
-		return nil, err
-	}
-	var langs []string
-	for abbr, lang := range resp.Langs {
-		langs = append(langs, fmt.Sprintf("%s: %s", abbr, lang))
-	}
-	sort.Strings(langs)
-
-	return langs, nil
+	return nil
 }
