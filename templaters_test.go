@@ -27,12 +27,12 @@ func Test_htmlTemplater_entry(t *testing.T) {
 }
 
 func Test_templatesFnMap_inc(t *testing.T) {
-	incFn := templaesFnMap["inc"].(func(int) int)
+	incFn := templatesFnMap["inc"].(func(int) int)
 	assert.Equal(t, incFn(2), 3)
 }
 
 func Test_templatesFnMap_dict(t *testing.T) {
-	dictFn := templaesFnMap["dict"].(func(values ...interface{}) map[string]interface{})
+	dictFn := templatesFnMap["dict"].(func(values ...interface{}) map[string]interface{})
 	args := []interface{}{"one", 1, "two", "2", "three", "drei"}
 	expected := map[string]interface{}{"one": 1, "two": "2", "three": "drei"}
 	assert.Equal(t, expected, dictFn(args...))

@@ -6,36 +6,28 @@ import (
 	"strings"
 
 	yd "github.com/dafanasev/go-yandex-dictionary"
-	yt "github.com/dafanasev/go-yandex-translate"
 )
 
-type dictionary interface {
-	Lookup(params *yd.Params) (*yd.Entry, error)
-}
-
-type translator interface {
-	Translate(lang, text string) (*yt.Response, error)
-	GetLangs(ui string) (*yt.Languages, error)
-}
-
-func lookupCycle(ch chan *entry) {
-	for scanner.Scan() {
-		req := strings.TrimSpace(scanner.Text())
+func (lu *lu) lookupCycle(ch chan *entry) {
+	for lu.scanner.Scan() {
+		req := strings.TrimSpace(lu.scanner.Text())
 		if req != "" {
 			entry := &entry{Request: req}
-			for _, lang := range opts.ToLangs {
-				translations := lookup(req, lang)
+			for _, lang := range lu.opts.ToLangs {
+				translations := lu.lookup(req, lang)
 				resp := &response{Lang: lang, Translations: translations}
 				entry.Responses = append(entry.Responses, resp)
 			}
+			// TODO: add to test
+			lu.history = append(lu.history, entry)
 			ch <- entry
 		}
 	}
 	close(ch)
 }
 
-func lookup(req string, lang string) []string {
-	dictResp, err := dict.Lookup(&yd.Params{Lang: opts.FromLang + "-" + lang, Text: req})
+func (lu *lu) lookup(req string, lang string) []string {
+	dictResp, err := lu.Lookup(&yd.Params{Lang: lu.opts.FromLang + "-" + lang, Text: req})
 
 	if err == nil {
 		var trs []string
@@ -47,7 +39,7 @@ func lookup(req string, lang string) []string {
 		return trs
 	}
 
-	transResp, err := tr.Translate(lang, req)
+	transResp, err := lu.Translate(lang, req)
 	if err != nil || transResp.Result() == req {
 		return []string{"no translation"}
 	}
@@ -55,8 +47,8 @@ func lookup(req string, lang string) []string {
 	return []string{transResp.Result()}
 }
 
-func supportedLangs(ui string) ([]string, error) {
-	resp, err := tr.GetLangs(ui)
+func (lu *lu) supportedLangs(ui string) ([]string, error) {
+	resp, err := lu.GetLangs(ui)
 	if err != nil {
 		return nil, err
 	}

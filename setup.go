@@ -9,7 +9,6 @@ import (
 
 	yd "github.com/dafanasev/go-yandex-dictionary"
 	yt "github.com/dafanasev/go-yandex-translate"
-	"github.com/jessevdk/go-flags"
 	"github.com/pkg/errors"
 )
 
@@ -23,9 +22,7 @@ type options struct {
 	Version     bool     `short:"v" long:"version" description:"show version"`
 }
 
-var opts options
-
-func setup(args []string) error {
+func (lu *lu) setup(args []string) error {
 	dictionaryAPIKey := os.Getenv("LU_YANDEX_DICTIONARY_API_KEY")
 	if dictionaryAPIKey == "" {
 		return errors.New("the required environment variable LU_YANDEX_DICTIONARY_API_KEY is not set")
@@ -36,72 +33,53 @@ func setup(args []string) error {
 		return errors.New("the required environment variable LU_YANDEX_TRANSLATE_API_KEY is not set")
 	}
 
-	r, err := setupInput(args)
+	r, err := lu.setupInput(args)
 	if err != nil {
 		return err
 	}
-	scanner = bufio.NewScanner(r)
+	lu.scanner = bufio.NewScanner(r)
 
-	err = setupFileOutput()
+	err = lu.setupFileOutput()
 	if err != nil {
 		return err
 	}
 
-	dict = yd.New(dictionaryAPIKey)
-	tr = yt.New(translateAPIKey)
+	lu.dictionary = yd.New(dictionaryAPIKey)
+	lu.translator = yt.New(translateAPIKey)
 
 	return nil
 }
 
-func parseOpts() ([]string, error) {
-	args, err := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash).Parse()
-	if opts.SrcFileName != "" && opts.SrcFileName == opts.DstFileName {
-		return nil, errors.New("source and destination must be different files")
-	}
-	if err != nil {
-		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
-			return nil, err
-		}
-		return nil, errors.Wrap(err, "can not parse arguments")
-	}
-
-	if strings.Contains(opts.ToLangs[0], ":") {
-		opts.ToLangs = strings.Split(opts.ToLangs[0], ":")
-	}
-
-	return args, nil
-}
-
-func setupInput(args []string) (io.Reader, error) {
+func (lu *lu) setupInput(args []string) (io.Reader, error) {
 	if len(args) > 0 {
 		req := strings.Join(args, " ")
 		return strings.NewReader(req), nil
 	}
-	if opts.SrcFileName != "" {
+	if lu.opts.SrcFileName != "" {
 		var err error
-		srcFile, err = os.Open(opts.SrcFileName)
+		lu.srcFile, err = os.Open(lu.opts.SrcFileName)
 		if err != nil {
 			return nil, err
 		}
-		return srcFile, nil
+		return lu.srcFile, nil
 	}
 	return os.Stdin, nil
 }
 
-func setupFileOutput() error {
-	if opts.DstFileName != "" {
+func (lu *lu) setupFileOutput() error {
+	if lu.opts.DstFileName != "" {
 		var err error
-		dstFile, err = os.OpenFile(opts.DstFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		lu.dstFile, err = os.OpenFile(lu.opts.DstFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return err
 		}
 
-		fileTemplater = func(ext string) templater {
+		lu.fileTemplater = func(ext string) templater {
 			if ext == "html" {
 				return &htmlTemplater{}
 			}
 			return &textTemplater{}
-		}(filepath.Ext(opts.DstFileName)[1:])
+		}(filepath.Ext(lu.opts.DstFileName)[1:])
 	}
 	return nil
 }

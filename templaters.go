@@ -8,7 +8,7 @@ import (
 
 var box = packr.NewBox("templates")
 
-var templaesFnMap = template.FuncMap{
+var templatesFnMap = template.FuncMap{
 	"inc": func(i int) int {
 		return i + 1
 	},
