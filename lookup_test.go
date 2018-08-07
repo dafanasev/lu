@@ -5,61 +5,25 @@ import (
 	"strings"
 	"testing"
 
-	yd "github.com/dafanasev/go-yandex-dictionary"
-	yt "github.com/dafanasev/go-yandex-translate"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type DictionaryMock struct{}
+func Test_Lu_lookup(t *testing.T) {
+	lu := &Lu{opts: options{FromLang: "en"}}
+	lu.dictionary = &dictionaryMock{}
+	lu.translator = &translatorMock{}
 
-func (m *DictionaryMock) Lookup(params *yd.Params) (*yd.Entry, error) {
-	if params.Text == "dog" && params.Lang == "en-de" {
-		var trs1 []yd.Tr
-		trs1 = append(trs1, yd.Tr{Text: "Hund"})
-		trs1 = append(trs1, yd.Tr{Text: "Rüde"})
-
-		trs2 := []yd.Tr{{Text: "geiler Bock"}}
-
-		defs := []yd.Def{{Tr: trs1}, {Tr: trs2}}
-		return &yd.Entry{Def: defs}, nil
-	}
-	return nil, errors.New("no entry")
+	assert.Equal(t, []string{"Hund", "Rüde", "geiler Bock"}, lu.lookup("dog", "de"))
+	assert.Equal(t, []string{"schwarzer Hund"}, lu.lookup("black dog", "de"))
+	assert.Equal(t, []string{"no translation"}, lu.lookup("cat", "de"))
+	assert.Equal(t, []string{"no translation"}, lu.lookup("black dog", "fr"))
 }
 
-type translatorMock struct{}
-
-func (m *translatorMock) Translate(lang, text string) (*yt.Response, error) {
-	if text == "black dog" && lang == "de" {
-		return &yt.Response{Text: []string{"schwarzer Hund"}}, nil
-	}
-	return nil, errors.New("no translation")
-}
-
-func (m *translatorMock) GetLangs(ui string) (*yt.Languages, error) {
-	if ui == "en" {
-		return &yt.Languages{Langs: map[string]string{"en": "english", "de": "german", "it": "italian"}}, nil
-	}
-	return nil, errors.New("wrong lang")
-}
-
-func Test_lookup(t *testing.T) {
-	dict = &DictionaryMock{}
-	tr = &translatorMock{}
-	opts.FromLang = "en"
-
-	assert.Equal(t, []string{"Hund", "Rüde", "geiler Bock"}, lookup("dog", "de"))
-	assert.Equal(t, []string{"schwarzer Hund"}, lookup("black dog", "de"))
-	assert.Equal(t, []string{"no translation"}, lookup("cat", "de"))
-	assert.Equal(t, []string{"no translation"}, lookup("black dog", "fr"))
-}
-
-func Test_lookupCycle(t *testing.T) {
-	dict = &DictionaryMock{}
-	tr = &translatorMock{}
-	opts.FromLang = "en"
-	opts.ToLangs = []string{"de"}
+func Test_Lu_lookupCycle(t *testing.T) {
+	lu := &Lu{opts: options{FromLang: "en", ToLangs: []string{"de"}}}
+	lu.dictionary = &dictionaryMock{}
+	lu.translator = &translatorMock{}
 
 	s := `
 	dog
@@ -67,16 +31,23 @@ func Test_lookupCycle(t *testing.T) {
 	
 	cat
 	`
-	scanner = bufio.NewScanner(strings.NewReader(s))
+	lu.scanner = bufio.NewScanner(strings.NewReader(s))
 
+	done := make(chan struct{})
 	ch := make(chan *entry)
-	go lookupCycle(ch)
+	close(done)
+	go lu.lookupCycle(done, ch)
+	assert.Equal(t, 0, len(lu.history))
 
 	expected := map[string][]string{
 		"dog":       {"Hund", "Rüde", "geiler Bock"},
 		"black dog": {"schwarzer Hund"},
 		"cat":       {"no translation"},
 	}
+
+	done = make(chan struct{})
+	ch = make(chan *entry)
+	go lu.lookupCycle(done, ch)
 
 	var entries []*entry
 	for entry := range ch {
@@ -87,15 +58,17 @@ func Test_lookupCycle(t *testing.T) {
 		assert.Equal(t, "de", entry.Responses[0].Lang)
 	}
 	assert.Equal(t, 3, len(entries))
+	assert.Equal(t, 3, len(lu.history))
 }
 
-func Test_supportedLangs(t *testing.T) {
-	tr = &translatorMock{}
+func Test_Lu_supportedLangs(t *testing.T) {
+	lu := &Lu{}
+	lu.translator = &translatorMock{}
 
-	_, err := supportedLangs("")
+	_, err := lu.supportedLangs("")
 	require.Error(t, err)
 
-	resp, err := supportedLangs("en")
+	resp, err := lu.supportedLangs("en")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"de: german", "en: english", "it: italian"}, resp)
 }

@@ -8,25 +8,34 @@ import (
 	yd "github.com/dafanasev/go-yandex-dictionary"
 )
 
-func (lu *lu) lookupCycle(ch chan *entry) {
-	for lu.scanner.Scan() {
-		req := strings.TrimSpace(lu.scanner.Text())
-		if req != "" {
-			entry := &entry{Request: req}
-			for _, lang := range lu.opts.ToLangs {
-				translations := lu.lookup(req, lang)
-				resp := &response{Lang: lang, Translations: translations}
-				entry.Responses = append(entry.Responses, resp)
+func (lu *Lu) lookupCycle(done chan struct{}, ch chan *entry) {
+	for {
+		select {
+		case <-done:
+			close(ch)
+			return
+		default:
+			if !lu.scanner.Scan() {
+				close(ch)
+				return
 			}
-			// TODO: add to test
-			lu.history = append(lu.history, entry)
-			ch <- entry
+
+			req := strings.TrimSpace(lu.scanner.Text())
+			if req != "" {
+				entry := &entry{Request: req}
+				for _, lang := range lu.opts.ToLangs {
+					translations := lu.lookup(req, lang)
+					resp := &response{Lang: lang, Translations: translations}
+					entry.Responses = append(entry.Responses, resp)
+				}
+				ch <- entry
+				lu.history = append(lu.history, entry)
+			}
 		}
 	}
-	close(ch)
 }
 
-func (lu *lu) lookup(req string, lang string) []string {
+func (lu *Lu) lookup(req string, lang string) []string {
 	dictResp, err := lu.Lookup(&yd.Params{Lang: lu.opts.FromLang + "-" + lang, Text: req})
 
 	if err == nil {
@@ -47,7 +56,7 @@ func (lu *lu) lookup(req string, lang string) []string {
 	return []string{transResp.Result()}
 }
 
-func (lu *lu) supportedLangs(ui string) ([]string, error) {
+func (lu *Lu) supportedLangs(ui string) ([]string, error) {
 	resp, err := lu.GetLangs(ui)
 	if err != nil {
 		return nil, err
