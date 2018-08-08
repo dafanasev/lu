@@ -28,21 +28,6 @@ func Test_Lu_entriesByReq(t *testing.T) {
 	assert.Equal(t, []*entry{{Request: "abc"}, {Request: "bcd"}}, entries)
 }
 
-func Test_Lu_shouldPrintEntries(t *testing.T) {
-	cases := []struct{ src, dst *os.File }{
-		{nil, nil},
-		{os.Stdin, nil},
-		{nil, os.Stdout},
-	}
-	for _, cs := range cases {
-		lu := &Lu{srcFile: cs.src, dstFile: cs.dst}
-		assert.True(t, lu.shouldPrintEntries())
-	}
-
-	lu := &Lu{srcFile: os.Stdin, dstFile: os.Stdout}
-	assert.False(t, lu.shouldPrintEntries())
-}
-
 func Test_Lu_writeFile(t *testing.T) {
 	withSetup := func(setupFn func(lu *Lu), assertsFn func(result string, err error)) {
 		lu := &Lu{}

@@ -8,15 +8,20 @@ import (
 	yd "github.com/dafanasev/go-yandex-dictionary"
 )
 
-func (lu *Lu) lookupCycle(done chan struct{}, ch chan *entry) {
+// lookupCycle iterates through data source line by line,
+// making look ups for all needed languages for non empty lines
+// adding results wrapped into entries struct to the history list and
+// passing them to the corresponding channel.
+// The cycle can be stopped at any moment using done channel
+func (lu *Lu) lookupCycle(done chan struct{}, entriesCh chan *entry) {
 	for {
 		select {
 		case <-done:
-			close(ch)
+			close(entriesCh)
 			return
 		default:
 			if !lu.scanner.Scan() {
-				close(ch)
+				close(entriesCh)
 				return
 			}
 
@@ -28,18 +33,23 @@ func (lu *Lu) lookupCycle(done chan struct{}, ch chan *entry) {
 					resp := &response{Lang: lang, Translations: translations}
 					entry.Responses = append(entry.Responses, resp)
 				}
-				ch <- entry
+				entriesCh <- entry
 				lu.history = append(lu.history, entry)
 			}
 		}
 	}
 }
 
+// lookup returns results of the call to dictionary and,
+// if there are no ones, to translator
+// It returns "no translation" if the call to translator returns no results too
 func (lu *Lu) lookup(req string, lang string) []string {
-	dictResp, err := lu.Lookup(&yd.Params{Lang: lu.opts.FromLang + "-" + lang, Text: req})
+	dictResp, err := lu.dictionary.Lookup(&yd.Params{Lang: lu.opts.FromLang + "-" + lang, Text: req})
 
 	if err == nil {
 		var trs []string
+		// iterating through yandex dictionary data structures
+		// to accumulate all definitions in a list and return it
 		for _, def := range dictResp.Def {
 			for _, tr := range def.Tr {
 				trs = append(trs, tr.Text)
@@ -48,7 +58,8 @@ func (lu *Lu) lookup(req string, lang string) []string {
 		return trs
 	}
 
-	transResp, err := lu.Translate(lang, req)
+	transResp, err := lu.translator.Translate(lang, req)
+	// translator returns request string as the result if there is no translation
 	if err != nil || transResp.Result() == req {
 		return []string{"no translation"}
 	}
@@ -56,8 +67,9 @@ func (lu *Lu) lookup(req string, lang string) []string {
 	return []string{transResp.Result()}
 }
 
+// supportedLangs returns the list of the languages supported by Yandex APIs
 func (lu *Lu) supportedLangs(ui string) ([]string, error) {
-	resp, err := lu.GetLangs(ui)
+	resp, err := lu.translator.GetLangs(ui)
 	if err != nil {
 		return nil, err
 	}

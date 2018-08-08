@@ -6,6 +6,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// dictionaryMock is the mock for the dictionary interface,
+// used for tests and debug purposes
 type dictionaryMock struct{}
 
 func (m *dictionaryMock) Lookup(params *yd.Params) (*yd.Entry, error) {
@@ -22,6 +24,8 @@ func (m *dictionaryMock) Lookup(params *yd.Params) (*yd.Entry, error) {
 	return nil, errors.New("no entry")
 }
 
+// translatorMock is the mock for the translator interface,
+// used for tests and debug purposes
 type translatorMock struct{}
 
 func (m *translatorMock) Translate(lang, text string) (*yt.Response, error) {

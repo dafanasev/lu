@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMain unsets LU_* environment variables before running test suite
+// to get clean test environment and restores them after running
 func TestMain(m *testing.M) {
 	keys := []string{"LU_YANDEX_DICTIONARY_API_KEY", "LU_YANDEX_TRANSLATE_API_KEY", "LU_DEFAULT_FROM_LANG", "LU_DEFAULT_TO_LANGS"}
 	envVars := make(map[string]string, len(keys))
@@ -97,6 +99,7 @@ func Test_parseCommandLine(t *testing.T) {
 func Test_printResults(t *testing.T) {
 	e := &entry{Request: "dog", Responses: []*response{{Lang: "de", Translations: []string{"Hund", "Rüde"}}}}
 
+	// write to buffer instead of stdout so we can test output
 	printResultsWrapper := func(e *entry, data struct{ src, dst *os.File }) string {
 		lu := &Lu{}
 		lu.srcFile = data.src
@@ -118,14 +121,23 @@ func Test_printResults(t *testing.T) {
 		return <-resultChan
 	}
 
-	result := printResultsWrapper(e, struct{ src, dst *os.File }{src: nil, dst: nil})
-	assert.NotContains(t, result, "1. Got results")
-	assert.Contains(t, result, "Rüde")
+	cases := []struct{ src, dst *os.File }{
+		{nil, nil},
+		{os.Stdin, nil},
+		{nil, os.Stdout},
+	}
+	for _, cs := range cases {
+		result := printResultsWrapper(e, struct{ src, dst *os.File }{src: cs.src, dst: cs.dst})
+		assert.NotContains(t, result, "1. Got results")
+		assert.Contains(t, result, "Rüde")
+	}
 
-	result = printResultsWrapper(e, struct{ src, dst *os.File }{src: os.Stdin, dst: os.Stdout})
+	result := printResultsWrapper(e, struct{ src, dst *os.File }{src: os.Stdin, dst: os.Stdout})
 	assert.Contains(t, result, "1. Got results")
 	assert.NotContains(t, result, "Rüde")
 
+	// testing error in the template, app should exit with code = 1
+	// in order to test it, run app in the separate process
 	old := stdoutTemplater
 	stdoutTemplater = func() *template.Template {
 		return template.Must(template.New("").Funcs(templatesFnMap).Parse((&textTemplater{}).entry() + "{{ .Undefined }}\n"))
