@@ -1,4 +1,8 @@
 .idea
+.DS_Store
+lu
+*.tar.gz
+*.zip
 in.txt
 out.txt
 out.html
