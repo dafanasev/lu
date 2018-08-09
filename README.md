@@ -1,3 +1,7 @@
+[![Build Status](https://travis-ci.org/dafanasev/lu.svg?branch=master)](https://travis-ci.org/dafanasev/lu)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dafanasev/lu)](https://goreportcard.com/report/github.com/dafanasev/lu)
+[![Coverage Status](https://coveralls.io/repos/github/dafanasev/lu/badge.svg)](https://coveralls.io/github/dafanasev/lu)
+
 dt
 ==
 
