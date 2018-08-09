@@ -31,9 +31,15 @@ type templater interface {
 }
 
 // layoutTemplater is the optional interface
-// that defines the Layout method used to render output file layout
+// that defines the layout method used to render output file layout
 type layoutTemplater interface {
 	layout() string
+}
+
+// stdoutTemplater is the optional interface
+// that defines the stodut method used to render result to stdout
+type stdoutTemplater interface {
+	stdout() string
 }
 
 // textTemplater implements templater interface to print lookup results to stdout and render text files
@@ -47,6 +53,10 @@ func (t *textTemplater) list() string {
 
 func (t *textTemplater) entry() string {
 	return box.String("entry.text.tmpl")
+}
+
+func (t *textTemplater) stdout() string {
+	return t.entry() + "{{ template \"entry\" . }}\n"
 }
 
 // htmlTemplater implements templater and layoutTemplater interfaces to render lookup results to html files

@@ -25,6 +25,8 @@ type Lu struct {
 	opts options
 	// line by line data source scanner
 	scanner *bufio.Scanner
+	// templater used to write to stdout
+	stdoutTemplater stdoutTemplater
 	// templater used to write to output file
 	fileTemplater templater
 	srcFile       *os.File
@@ -69,65 +71,23 @@ func (br entriesByReq) Less(i, j int) bool { return br[i].Request < br[j].Reques
 func newLu(args []string, opts options) (*Lu, error) {
 	lu := &Lu{opts: opts}
 
-	err := lu.setup(args)
+	err := lu.setupAPI()
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := lu.setupInput(args)
+	if err != nil {
+		return nil, err
+	}
+	lu.scanner = bufio.NewScanner(r)
+
+	err = lu.setupOutput()
 	if err != nil {
 		return nil, err
 	}
 
 	return lu, nil
-}
-
-// close cleans up the resources allocated by instance of lu
-func (lu *Lu) close() {
-	if lu.srcFile != nil {
-		lu.srcFile.Close()
-		lu.srcFile = nil
-	}
-
-	if lu.dstFile != nil {
-		lu.dstFile.Close()
-		lu.dstFile = nil
-	}
-}
-
-// writeFile writes history, possibly sorted, to the specified output file
-func (lu *Lu) writeFile() error {
-	if lu.opts.Sort {
-		sort.Sort(entriesByReq(lu.history))
-	}
-
-	text := lu.fileTemplater.entry() + lu.fileTemplater.list()
-	// if templater supports layout, use it
-	if lf, ok := lu.fileTemplater.(layoutTemplater); ok {
-		text += lf.layout()
-	}
-	t := template.Must(template.New("").Funcs(templatesFnMap).Parse(text))
-
-	var b bytes.Buffer
-	err := t.Execute(&b, struct{ Entries []*entry }{lu.history})
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprint(lu.dstFile, b.String())
-	return nil
-}
-
-// setup prepares lu instance
-func (lu *Lu) setup(args []string) error {
-	err := lu.setupAPI()
-	if err != nil {
-		return err
-	}
-
-	r, err := lu.setupInput(args)
-	if err != nil {
-		return err
-	}
-	lu.scanner = bufio.NewScanner(r)
-
-	err = lu.setupFileOutput()
-	return err
 }
 
 // setupAPI sets dictionary and translator, mock ones for tests
@@ -171,8 +131,10 @@ func (lu *Lu) setupInput(args []string) (io.Reader, error) {
 	return os.Stdin, nil
 }
 
-// setupFileOutput sets the destination file and templater, if destination file name is specified
-func (lu *Lu) setupFileOutput() error {
+// setupOutput sets the destination file and templater, if destination file name is specified
+func (lu *Lu) setupOutput() error {
+	lu.stdoutTemplater = &textTemplater{}
+
 	if lu.opts.DstFileName != "" {
 		var err error
 		lu.dstFile, err = os.OpenFile(lu.opts.DstFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
@@ -187,5 +149,41 @@ func (lu *Lu) setupFileOutput() error {
 			return &textTemplater{}
 		}(filepath.Ext(lu.opts.DstFileName)[1:])
 	}
+	return nil
+}
+
+// close cleans up the resources allocated by instance of lu
+func (lu *Lu) close() {
+	if lu.srcFile != nil {
+		lu.srcFile.Close()
+		lu.srcFile = nil
+	}
+
+	if lu.dstFile != nil {
+		lu.dstFile.Close()
+		lu.dstFile = nil
+	}
+}
+
+// writeFile writes history, possibly sorted, to the specified output file
+func (lu *Lu) writeFile() error {
+	if lu.opts.Sort {
+		sort.Sort(entriesByReq(lu.history))
+	}
+
+	text := lu.fileTemplater.entry() + lu.fileTemplater.list()
+	// if templater supports layout, use it
+	if lf, ok := lu.fileTemplater.(layoutTemplater); ok {
+		text += lf.layout()
+	}
+	t := template.Must(template.New("").Funcs(templatesFnMap).Parse(text))
+
+	var b bytes.Buffer
+	err := t.Execute(&b, struct{ Entries []*entry }{lu.history})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprint(lu.dstFile, b.String())
 	return nil
 }

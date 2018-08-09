@@ -97,50 +97,6 @@ func Test_Lu_close(t *testing.T) {
 	assert.Nil(t, lu.dstFile)
 }
 
-func Test_Lu_setupInput(t *testing.T) {
-	lu := &Lu{}
-	r, _ := lu.setupInput([]string{})
-	assert.Equal(t, os.Stdin, r)
-
-	r, _ = lu.setupInput([]string{"hot", "dog"})
-	assert.Equal(t, strings.NewReader("hot dog"), r)
-
-	os.Create("tmp.txt")
-	lu = &Lu{opts: options{SrcFileName: "tmp.txt"}}
-	r, err := lu.setupInput([]string{})
-	require.NoError(t, err)
-	assert.NotNil(t, r)
-	os.Remove("tmp.txt")
-
-	lu = &Lu{opts: options{SrcFileName: "not_existed.txt"}}
-	lu.setupInput([]string{})
-	_, err = os.Open(lu.opts.SrcFileName)
-	require.Error(t, err)
-}
-
-func Test_Lu_setupFileOutput(t *testing.T) {
-	lu := &Lu{}
-
-	err := lu.setupFileOutput()
-	require.NoError(t, err)
-
-	fname := "out.txt"
-	os.Create(fname)
-	lu = &Lu{opts: options{DstFileName: fname}}
-	err = lu.setupFileOutput()
-	require.NoError(t, err)
-	assert.Equal(t, &textTemplater{}, lu.fileTemplater)
-	os.Remove(fname)
-
-	fname = "out.html"
-	os.Create(fname)
-	lu = &Lu{opts: options{DstFileName: fname}}
-	err = lu.setupFileOutput()
-	require.NoError(t, err)
-	assert.Equal(t, &htmlTemplater{}, lu.fileTemplater)
-	os.Remove(fname)
-}
-
 func Test_Lu_setupAPI(t *testing.T) {
 	lu := &Lu{}
 	oldD := os.Getenv("LU_YANDEX_DICTIONARY_API_KEY")
@@ -164,4 +120,50 @@ func Test_Lu_setupAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, lu.dictionary)
 	assert.NotNil(t, lu.translator)
+}
+
+func Test_Lu_setupInput(t *testing.T) {
+	lu := &Lu{}
+	r, _ := lu.setupInput([]string{})
+	assert.Equal(t, os.Stdin, r)
+
+	r, _ = lu.setupInput([]string{"hot", "dog"})
+	assert.Equal(t, strings.NewReader("hot dog"), r)
+
+	os.Create("tmp.txt")
+	lu = &Lu{opts: options{SrcFileName: "tmp.txt"}}
+	r, err := lu.setupInput([]string{})
+	require.NoError(t, err)
+	assert.NotNil(t, r)
+	os.Remove("tmp.txt")
+
+	lu = &Lu{opts: options{SrcFileName: "not_existed.txt"}}
+	lu.setupInput([]string{})
+	_, err = os.Open(lu.opts.SrcFileName)
+	require.Error(t, err)
+}
+
+func Test_Lu_setupOutput(t *testing.T) {
+	lu := &Lu{}
+
+	err := lu.setupOutput()
+	require.NoError(t, err)
+
+	assert.Equal(t, &textTemplater{}, lu.stdoutTemplater)
+
+	fname := "out.txt"
+	os.Create(fname)
+	lu = &Lu{opts: options{DstFileName: fname}}
+	err = lu.setupOutput()
+	require.NoError(t, err)
+	assert.Equal(t, &textTemplater{}, lu.fileTemplater)
+	os.Remove(fname)
+
+	fname = "out.html"
+	os.Create(fname)
+	lu = &Lu{opts: options{DstFileName: fname}}
+	err = lu.setupOutput()
+	require.NoError(t, err)
+	assert.Equal(t, &htmlTemplater{}, lu.fileTemplater)
+	os.Remove(fname)
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/jessevdk/go-flags"
@@ -26,11 +27,6 @@ type options struct {
 	ShowLangs   bool     `short:"l" long:"languages" description:"show supported languages"`
 	Version     bool     `short:"v" long:"version" description:"show version"`
 }
-
-// stdoutTemplater is the compiled entry template used to print results to stdout
-var stdoutTemplater = func() *template.Template {
-	return template.Must(template.New("").Funcs(templatesFnMap).Parse((&textTemplater{}).entry() + "{{ template \"entry\" . }}\n"))
-}()
 
 func main() {
 	args, opts, err := parseCommandLine()
@@ -124,7 +120,12 @@ func parseCommandLine() ([]string, options, error) {
 // otherwise show progress
 func printResults(lu *Lu, entry *entry, n int) {
 	if lu.srcFile == nil || lu.dstFile == nil {
-		err := stdoutTemplater.Execute(os.Stdout, entry)
+		var once sync.Once
+		var t *template.Template
+		once.Do(func() {
+			t = template.Must(template.New("").Funcs(templatesFnMap).Parse(lu.stdoutTemplater.stdout()))
+		})
+		err := t.Execute(os.Stdout, entry)
 		if err != nil {
 			exitWithError(errors.Wrap(err, "can't parse template"))
 		}

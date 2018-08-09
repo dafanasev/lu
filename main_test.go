@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"html/template"
 	"io"
 	"io/ioutil"
 	"os"
@@ -96,6 +95,12 @@ func Test_parseCommandLine(t *testing.T) {
 	assert.Contains(t, err.Error(), "can not parse arguments")
 }
 
+type stdoutTemplaterMock struct{}
+
+func (m *stdoutTemplaterMock) stdout() string {
+	return "{{.Undefined}}"
+}
+
 func Test_printResults(t *testing.T) {
 	e := &entry{Request: "dog", Responses: []*response{{Lang: "de", Translations: []string{"Hund", "Rüde"}}}}
 
@@ -104,6 +109,7 @@ func Test_printResults(t *testing.T) {
 		lu := &Lu{}
 		lu.srcFile = data.src
 		lu.dstFile = data.dst
+		lu.stdoutTemplater = &textTemplater{}
 		old := os.Stdout
 		r, w, _ := os.Pipe()
 		os.Stdout = w
@@ -138,13 +144,11 @@ func Test_printResults(t *testing.T) {
 
 	// testing error in the template, app should exit with code = 1
 	// in order to test it, run app in the separate process
-	old := stdoutTemplater
-	stdoutTemplater = func() *template.Template {
-		return template.Must(template.New("").Funcs(templatesFnMap).Parse((&textTemplater{}).entry() + "{{ .Undefined }}\n"))
-	}()
 
 	if os.Getenv("LU_CRASH") == "1" {
-		printResults(&Lu{}, e, 1)
+		lu := &Lu{}
+		lu.stdoutTemplater = &stdoutTemplaterMock{}
+		printResults(lu, e, 1)
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=Test_printResults")
@@ -152,8 +156,6 @@ func Test_printResults(t *testing.T) {
 	err := cmd.Run()
 	exitError, ok := err.(*exec.ExitError)
 	assert.True(t, ok && !exitError.Success())
-
-	stdoutTemplater = old
 }
 
 func Test_handleExitSignal(t *testing.T) {
