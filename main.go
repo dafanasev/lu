@@ -14,13 +14,13 @@ import (
 )
 
 // version holds lu current semantic version number
-const version = "0.1.0"
+const version = "0.1.1"
 
 // options used by go-flags package to parse command line arguments into.
 // For FromLang and ToLangs it can also get values from environment variables
 type options struct {
-	FromLang    string   `short:"f" long:"from" env:"LU_DEFAULT_FROM_LANG" description:"default language to translate from"`
-	ToLangs     []string `short:"t" long:"to" env:"LU_DEFAULT_TO_LANGS" description:"default language to translate to"`
+	FromLang    string   `short:"f" long:"from" env:"LU_DEFAULT_FROM_LANG" description:"language to translate from"`
+	ToLangs     []string `short:"t" long:"to" env:"LU_DEFAULT_TO_LANGS" description:"languages to translate to"`
 	SrcFileName string   `short:"i" long:"source" description:"source file name"`
 	DstFileName string   `short:"o" long:"output" description:"destination file name"`
 	Sort        bool     `short:"s" long:"sort" description:"sort alphabetically"`
